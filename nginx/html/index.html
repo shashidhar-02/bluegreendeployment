@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blue-Green Deployment Control Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .environment {
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .blue-env {
+            background: linear-gradient(135deg, #667eea 0%, #4c6ef5 100%);
+            color: white;
+        }
+        .green-env {
+            background: linear-gradient(135deg, #51cf66 0%, #37b24d 100%);
+            color: white;
+        }
+        .environment h2 {
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .active {
+            background: #fff;
+            color: #51cf66;
+        }
+        .inactive {
+            background: rgba(255,255,255,0.3);
+            color: white;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .info h3 {
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        .info-grid {
+            display: grid;
+            gap: 10px;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .info-value {
+            color: #868e96;
+            font-family: monospace;
+        }
+        .actions {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .btn-blue {
+            background: linear-gradient(135deg, #667eea 0%, #4c6ef5 100%);
+            color: white;
+        }
+        .btn-green {
+            background: linear-gradient(135deg, #51cf66 0%, #37b24d 100%);
+            color: white;
+        }
+        .btn-test {
+            background: #868e96;
+            color: white;
+        }
+        .instructions {
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #ffc107;
+        }
+        .instructions h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+        .instructions li {
+            margin: 5px 0;
+        }
+        .instructions code {
+            background: #fff;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #495057;
+        }
+        .health-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .healthy {
+            background: #51cf66;
+            box-shadow: 0 0 10px #51cf66;
+        }
+        .unhealthy {
+            background: #ff6b6b;
+            box-shadow: 0 0 10px #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Blue-Green Deployment Control</h1>
+        <p class="subtitle">Manage your deployment strategy</p>
+
+        <div class="status-section">
+            <div class="environment blue-env">
+                <h2>Blue Environment</h2>
+                <p>Current Production</p>
+                <div class="status active" id="blue-status">● ACTIVE</div>
+                <p style="margin-top: 15px; font-size: 14px;">Port: 3001</p>
+            </div>
+            <div class="environment green-env">
+                <h2>Green Environment</h2>
+                <p>Staging/New Version</p>
+                <div class="status inactive" id="green-status">○ STANDBY</div>
+                <p style="margin-top: 15px; font-size: 14px;">Port: 3002</p>
+            </div>
+        </div>
+
+        <div class="info">
+            <h3>📊 Deployment Information</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Active Environment:</span>
+                    <span class="info-value" id="active-env">Blue</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Main URL:</span>
+                    <span class="info-value">http://localhost</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Blue URL (Direct):</span>
+                    <span class="info-value">http://localhost/blue/</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Green URL (Direct):</span>
+                    <span class="info-value">http://localhost/green/</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn-blue" onclick="testEnvironment('blue')">Test Blue</button>
+            <button class="btn-green" onclick="testEnvironment('green')">Test Green</button>
+        </div>
+
+        <div class="instructions">
+            <h3>⚙️ How to Switch Environments</h3>
+            <ol>
+                <li>Test your new version using the direct URLs above</li>
+                <li>Edit <code>nginx/conf.d/default.conf</code></li>
+                <li>In the <code>upstream backend</code> section, swap the commented lines</li>
+                <li>Run: <code>docker-compose exec nginx nginx -s reload</code></li>
+                <li>Traffic will now be served from the new environment</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        async function testEnvironment(env) {
+            const url = env === 'blue' ? 'http://localhost/blue/health' : 'http://localhost/green/health';
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                alert(`${env.toUpperCase()} Environment Status:\n\n` + 
+                      `Status: ${data.status}\n` +
+                      `Version: ${data.version}\n` +
+                      `MongoDB: ${data.mongodb}\n` +
+                      `Timestamp: ${data.timestamp}`);
+            } catch (error) {
+                alert(`Error testing ${env} environment:\n${error.message}`);
+            }
+        }
+
+        // Auto-refresh health status every 30 seconds
+        async function checkHealth() {
+            try {
+                const blueResponse = await fetch('http://localhost/blue/health');
+                const greenResponse = await fetch('http://localhost/green/health');
+                
+                const blueHealth = await blueResponse.json();
+                const greenHealth = await greenResponse.json();
+                
+                console.log('Health check:', { blue: blueHealth, green: greenHealth });
+            } catch (error) {
+                console.error('Health check failed:', error);
+            }
+        }
+
+        setInterval(checkHealth, 30000);
+        checkHealth();
+    </script>
+</body>
+</html>

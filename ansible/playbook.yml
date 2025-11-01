@@ -1,0 +1,161 @@
+---
+- name: Setup Todo App Server
+  hosts: todo_servers
+  become: yes
+  vars:
+    docker_compose_version: "2.23.0"
+    app_dir: "/opt/todo-app"
+    docker_hub_username: "{{ lookup('env', 'DOCKER_HUB_USERNAME') }}"
+    docker_hub_password: "{{ lookup('env', 'DOCKER_HUB_PASSWORD') }}"
+    
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
+          - git
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Install Docker Python library
+      pip:
+        name:
+          - docker
+          - docker-compose
+        state: present
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add current user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create required subdirectories
+      file:
+        path: "{{ app_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - nginx
+        - nginx/conf.d
+        - nginx/html
+        - monitoring
+        - monitoring/prometheus
+        - monitoring/grafana
+        - monitoring/grafana/provisioning
+        - scripts
+
+    - name: Log in to Docker Hub
+      docker_login:
+        username: "{{ docker_hub_username }}"
+        password: "{{ docker_hub_password }}"
+      when: docker_hub_username != "" and docker_hub_password != ""
+      ignore_errors: yes
+
+    - name: Copy docker-compose.yml
+      copy:
+        src: ../docker-compose.yml
+        dest: "{{ app_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    - name: Copy Nginx configuration
+      copy:
+        src: ../nginx/
+        dest: "{{ app_dir }}/nginx/"
+        mode: '0644'
+
+    - name: Copy monitoring configuration
+      copy:
+        src: ../monitoring/
+        dest: "{{ app_dir }}/monitoring/"
+        mode: '0644'
+
+    - name: Copy deployment scripts
+      copy:
+        src: ../scripts/
+        dest: "{{ app_dir }}/scripts/"
+        mode: '0755'
+
+    - name: Create .env file
+      copy:
+        content: |
+          PORT=3000
+          MONGODB_URI=mongodb://mongodb:27017/todoapp
+          NODE_ENV=production
+        dest: "{{ app_dir }}/.env"
+        mode: '0600'
+
+    - name: Pull Docker images
+      community.docker.docker_compose:
+        project_src: "{{ app_dir }}"
+        pull: yes
+      ignore_errors: yes
+
+    - name: Start Docker Compose services
+      community.docker.docker_compose:
+        project_src: "{{ app_dir }}"
+        state: present
+      register: docker_compose_output
+
+    - name: Display deployment status
+      debug:
+        msg: "Deployment completed. Services are running."
+
+    - name: Wait for services to be healthy
+      wait_for:
+        host: localhost
+        port: "{{ item }}"
+        delay: 5
+        timeout: 60
+      loop:
+        - 80
+        - 8080
+        - 3001
+        - 3002
+      ignore_errors: yes

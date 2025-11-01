@@ -1,0 +1,7 @@
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and fill in your values
+
+# do_token = "your-digitalocean-api-token-here"
+# region = "nyc3"
+# droplet_size = "s-2vcpu-4gb"
+# ssh_public_key_path = "~/.ssh/id_rsa.pub"

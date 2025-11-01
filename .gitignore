@@ -1,0 +1,23 @@
+node_modules/
+.env
+.DS_Store
+npm-debug.log
+*.log
+.vscode/
+.idea/
+dist/
+build/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+
+# Ansible
+*.retry
+
+# Monitoring data
+monitoring/prometheus/data/
+monitoring/grafana/data/

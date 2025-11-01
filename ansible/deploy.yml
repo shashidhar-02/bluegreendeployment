@@ -1,0 +1,50 @@
+---
+- name: Deploy Todo App
+  hosts: todo_servers
+  become: yes
+  vars:
+    app_dir: "/opt/todo-app"
+    docker_image: "{{ lookup('env', 'DOCKER_IMAGE') }}"
+    
+  tasks:
+    - name: Pull latest Docker image
+      docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+        force_source: yes
+      when: docker_image != ""
+
+    - name: Stop and remove old containers
+      community.docker.docker_compose:
+        project_src: "{{ app_dir }}"
+        state: absent
+        remove_orphans: yes
+
+    - name: Start new containers
+      community.docker.docker_compose:
+        project_src: "{{ app_dir }}"
+        state: present
+        pull: yes
+
+    - name: Wait for services to be healthy
+      wait_for:
+        host: localhost
+        port: "{{ item }}"
+        delay: 5
+        timeout: 60
+      loop:
+        - 80
+        - 3001
+        - 3002
+
+    - name: Check service health
+      uri:
+        url: "http://localhost/blue/health"
+        return_content: yes
+      register: health_check
+      retries: 3
+      delay: 10
+
+    - name: Display health status
+      debug:
+        msg: "Health check result: {{ health_check.json }}"
