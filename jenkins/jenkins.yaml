@@ -1,0 +1,92 @@
+﻿# Jenkins Configuration as Code (JCasC)
+jenkins:
+  systemMessage: "Blue-Green Deployment CI/CD Pipeline"
+  numExecutors: 2
+  mode: NORMAL
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          password: ${JENKINS_ADMIN_PASSWORD:-admin}
+  
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: docker-hub-credentials
+              username: ${DOCKER_HUB_USERNAME}
+              password: ${DOCKER_HUB_PASSWORD}
+              description: "Docker Hub Credentials"
+          
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: ssh-credentials
+              username: ${SSH_USER}
+              privateKeySource:
+                directEntry:
+                  privateKey: ${SSH_PRIVATE_KEY}
+              description: "SSH Credentials for Deployment Server"
+          
+          - string:
+              scope: GLOBAL
+              id: server-ip
+              secret: ${SERVER_IP}
+              description: "Production Server IP Address"
+
+jobs:
+  - script: >
+      multibranchPipelineJob('todo-app-pipeline') {
+        branchSources {
+          git {
+            id('todo-app')
+            remote('https://github.com/shashidhar-02/bluegreendeployment.git')
+            credentialsId('github-credentials')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(10)
+          }
+        }
+        triggers {
+          periodic(5)
+        }
+      }
+
+tool:
+  git:
+    installations:
+      - name: Default
+        home: git
+  
+  nodejs:
+    installations:
+      - name: NodeJS-18
+        properties:
+          - installSource:
+              installers:
+                - nodeJSInstaller:
+                    id: "18.19.0"
+                    npmPackagesRefreshHours: 72
+
+unclassified:
+  location:
+    url: http://localhost:8080/
+    adminAddress: admin@example.com
+  
+  globalLibraries:
+    libraries:
+      - name: "shared-library"
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "https://github.com/shashidhar-02/bluegreendeployment.git"
