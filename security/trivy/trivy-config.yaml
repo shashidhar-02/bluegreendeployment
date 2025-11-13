@@ -1,0 +1,30 @@
+# Trivy Security Scanner Configuration
+scan:
+  security-checks:
+    - vuln
+    - config
+    - secret
+  
+  severity:
+    - CRITICAL
+    - HIGH
+    - MEDIUM
+  
+  ignore-unfixed: false
+  
+  timeout: 10m
+  
+vulnerability:
+  type:
+    - os
+    - library
+  
+secret:
+  config: .trivyignore
+
+output:
+  format: json
+  file: trivy-results.json
+
+cache:
+  dir: /tmp/trivy-cache

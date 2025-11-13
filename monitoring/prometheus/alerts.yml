@@ -1,0 +1,145 @@
+groups:
+  - name: application_alerts
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"todo-api-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 1 minute."
+          
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: errors
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+          
+      - alert: HighResponseTime
+        expr: http_request_duration_seconds_sum / http_request_duration_seconds_count > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High response time detected"
+          description: "Average response time is {{ $value }}s for {{ $labels.job }}"
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value | humanize }}% on {{ $labels.instance }}"
+          
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanize }}% on {{ $labels.instance }}"
+          
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          category: storage
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value | humanize }}% on {{ $labels.instance }} {{ $labels.mountpoint }}"
+          
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 5
+        for: 1m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "Critical disk space"
+          description: "Disk space is {{ $value | humanize }}% on {{ $labels.instance }} {{ $labels.mountpoint }}"
+
+  - name: database_alerts
+    interval: 30s
+    rules:
+      - alert: MongoDBDown
+        expr: up{job="mongodb"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "MongoDB is down"
+          description: "MongoDB has been down for more than 1 minute."
+          
+      - alert: HighDatabaseConnections
+        expr: mongodb_connections{state="current"} > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "High database connections"
+          description: "Current connections: {{ $value }} on {{ $labels.instance }}"
+
+  - name: deployment_alerts
+    interval: 30s
+    rules:
+      - alert: BlueGreenMismatch
+        expr: sum(up{job="todo-api-blue"}) != sum(up{job="todo-api-green"})
+        for: 10m
+        labels:
+          severity: warning
+          category: deployment
+        annotations:
+          summary: "Blue and Green environments out of sync"
+          description: "Blue and Green environments have different availability states"
+          
+      - alert: ContainerRestartLoop
+        expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: deployment
+        annotations:
+          summary: "Container restarting frequently"
+          description: "Container {{ $labels.container }} is restarting frequently"
+
+  - name: security_alerts
+    interval: 30s
+    rules:
+      - alert: UnauthorizedAccessAttempt
+        expr: rate(http_requests_total{status="401"}[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High rate of unauthorized access attempts"
+          description: "{{ $value }} unauthorized attempts per second detected"
+          
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "SSL certificate will expire in {{ $value | humanizeDuration }}"
