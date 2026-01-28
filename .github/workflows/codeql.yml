@@ -19,6 +19,10 @@ on:
   schedule:
     - cron: '35 2 * * 4'
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
@@ -99,3 +103,9 @@ jobs:
       uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"
+
+    - name: Upload CodeQL Results
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: results.sarif
+        wait-for-processing: true

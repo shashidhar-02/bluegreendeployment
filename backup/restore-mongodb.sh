@@ -67,7 +67,7 @@ if [ -z "$DB_DIR" ]; then
 fi
 
 # Confirm restore
-read -p "This will overwrite the existing database. Continue? (yes/no): " CONFIRM
+read -r -p "This will overwrite the existing database. Continue? (yes/no): " CONFIRM
 if [ "$CONFIRM" != "yes" ]; then
     echo "Restore cancelled"
     exit 0

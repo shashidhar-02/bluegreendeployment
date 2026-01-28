@@ -23,6 +23,10 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+permissions:
+  contents: read
+  security-events: write
   schedule:
     - cron: '33 6 * * 2'
 

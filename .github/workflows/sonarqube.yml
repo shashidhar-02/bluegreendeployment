@@ -31,6 +31,10 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+permissions:
+  contents: read
+  security-events: write
   workflow_dispatch:
 
 permissions:

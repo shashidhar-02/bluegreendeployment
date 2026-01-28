@@ -19,6 +19,10 @@ on:
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ "main" ]
+
+permissions:
+  contents: read
+  security-events: write
   schedule:
     - cron: '36 17 * * 4'
 
@@ -54,8 +58,16 @@ jobs:
           # This will handover control about PR rejection to the GitHub side
           max-allowed-issues: 2147483647
 
-      # Upload the SARIF file generated in the previous step
       - name: Upload SARIF results file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
+          wait-for-processing: true
+
+      - name: Report on severity threshold
+        run: |
+          # Fail if medium/high/critical issues found
+          if grep -q '"level": "error"' results.sarif; then
+            echo "Security issues found - failing build"
+            exit 1
+          fi

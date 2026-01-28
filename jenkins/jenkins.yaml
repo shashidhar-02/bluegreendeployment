@@ -9,7 +9,7 @@ jenkins:
       allowsSignup: false
       users:
         - id: admin
-          password: ${JENKINS_ADMIN_PASSWORD:-admin}
+          password: ${JENKINS_ADMIN_PASSWORD:-change_me}
   
   authorizationStrategy:
     loggedInUsersCanDoAnything:

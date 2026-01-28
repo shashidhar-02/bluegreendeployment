@@ -1,6 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
@@ -9,8 +11,33 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://mongodb:27017/todoapp'
 const APP_VERSION = process.env.APP_VERSION || 'blue';
 
 // Middleware
+app.use(helmet()); // Secure HTTP headers
 app.use(cors());
 app.use(express.json());
+
+// Rate Limiting Middleware
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  keyGenerator: (req, res) => {
+    return req.ip || req.connection.remoteAddress; // Use IP for rate limiting
+  },
+  skip: (req, res) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Too many requests',
+      retryAfter: req.rateLimit.resetTime
+    });
+  }
+});
+
+app.use(limiter);
 
 // MongoDB Connection
 mongoose.connect(MONGODB_URI, {
