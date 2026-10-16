@@ -1,21 +1,31 @@
 {
   "name": "todo-api",
   "version": "1.0.0",
-  "description": "A simple Todo API with blue-green deployment",
+  "description": "Production-ready Todo REST API with Blue-Green Deployment, Docker, Nginx, Terraform, Ansible, and Prometheus/Grafana monitoring",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 0"
+    "test": "node --test tests/unit/api.test.js",
+    "test:unit": "node --test tests/unit/api.test.js",
+    "test:integration": "jest tests/integration/api.test.js",
+    "test:e2e": "playwright test tests/e2e/app.spec.js",
+    "lint": "node --check src/index.js && node --check tests/unit/api.test.js"
   },
   "keywords": [
     "todo",
     "api",
     "express",
-    "mongodb"
+    "mongodb",
+    "blue-green-deployment",
+    "docker",
+    "nginx",
+    "terraform",
+    "ansible",
+    "devops"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Open Source Contributors",
+  "license": "MIT",
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
@@ -26,5 +36,16 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
-  }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shashidhar-02/bluegreendeployment.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shashidhar-02/bluegreendeployment/issues"
+  },
+  "homepage": "https://github.com/shashidhar-02/bluegreendeployment#readme"
 }
