@@ -1,4 +1,4 @@
-﻿name: Terraform Infrastructure
+name: Terraform Infrastructure
 
 on:
   push:
@@ -10,6 +10,7 @@ on:
     branches: [ main ]
     paths:
       - 'terraform/**'
+      - '.github/workflows/terraform.yml'
   workflow_dispatch:
     inputs:
       action:
@@ -24,7 +25,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   TF_VERSION: '1.6.0'
@@ -34,7 +34,7 @@ jobs:
   terraform-validate:
     name: Validate Terraform
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -48,10 +48,8 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform fmt -check -recursive
 
-      - name: Terraform Init
+      - name: Terraform Init (backend-free validation)
         working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
         run: terraform init -backend=false
 
       - name: Terraform Validate
@@ -63,19 +61,35 @@ jobs:
     runs-on: ubuntu-latest
     needs: terraform-validate
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check DigitalOcean Credentials
+        id: creds
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          SSH_PUB: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          if [ -n "$DO_TOKEN" ] && [ -n "$SSH_PUB" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Terraform plan skipped: DIGITALOCEAN_TOKEN or SSH_PUBLIC_KEY secret is not configured." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Setup Terraform
+        if: steps.creds.outputs.configured == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Create terraform.tfvars
+      - name: Create SSH key and terraform.tfvars
+        if: steps.creds.outputs.configured == 'true'
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > "${{ github.workspace }}/ssh_key.pub"
           cat > terraform.tfvars <<EOF
           do_token = "${{ secrets.DIGITALOCEAN_TOKEN }}"
           region = "nyc3"
@@ -85,131 +99,11 @@ jobs:
           environment = "production"
           EOF
 
-      - name: Create SSH key file
-        run: |
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
-
-      - name: Terraform Init
+      - name: Terraform Init & Plan
+        if: steps.creds.outputs.configured == 'true'
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: terraform init
-
-      - name: Terraform Plan
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: terraform plan -out=tfplan
-
-      - name: Upload Plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: ${{ env.TF_WORKING_DIR }}/tfplan
-
-  terraform-apply:
-    name: Apply Infrastructure
-    runs-on: ubuntu-latest
-    needs: terraform-plan
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment:
-      name: production-infrastructure
-      url: http://${{ steps.terraform-output.outputs.app_url }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: Create terraform.tfvars
-        working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          cat > terraform.tfvars <<EOF
-          do_token = "${{ secrets.DIGITALOCEAN_TOKEN }}"
-          region = "nyc3"
-          droplet_size = "s-2vcpu-4gb"
-          jenkins_droplet_size = "s-2vcpu-4gb"
-          ssh_public_key_path = "${{ github.workspace }}/ssh_key.pub"
-          environment = "production"
-          EOF
-
-      - name: Create SSH key file
-        run: |
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: terraform apply -auto-approve
-
-      - name: Get Terraform Outputs
-        id: terraform-output
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          echo "droplet_ip=$(terraform output -raw droplet_ip)" >> $GITHUB_OUTPUT
-          echo "jenkins_ip=$(terraform output -raw jenkins_droplet_ip)" >> $GITHUB_OUTPUT
-          echo "app_url=$(terraform output -raw app_url)" >> $GITHUB_OUTPUT
-
-      - name: Display Infrastructure Info
-        run: |
-          echo "### Infrastructure Deployed Successfully! :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Application Server IP:** ${{ steps.terraform-output.outputs.droplet_ip }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Jenkins Server IP:** ${{ steps.terraform-output.outputs.jenkins_ip }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Application URL:** ${{ steps.terraform-output.outputs.app_url }}" >> $GITHUB_STEP_SUMMARY
-
-  terraform-destroy:
-    name: Destroy Infrastructure
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-    environment:
-      name: production-infrastructure-destroy
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Create terraform.tfvars
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          cat > terraform.tfvars <<EOF
-          do_token = "${{ secrets.DIGITALOCEAN_TOKEN }}"
-          region = "nyc3"
-          droplet_size = "s-2vcpu-4gb"
-          jenkins_droplet_size = "s-2vcpu-4gb"
-          ssh_public_key_path = "${{ github.workspace }}/ssh_key.pub"
-          environment = "production"
-          EOF
-
-      - name: Create SSH key file
-        run: |
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
-
-      - name: Terraform Init
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: terraform init
-
-      - name: Terraform Destroy
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: terraform destroy -auto-approve
+          terraform init -backend=false
+          terraform plan -out=tfplan
