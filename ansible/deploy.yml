@@ -1,50 +1,214 @@
----
-- name: Deploy Todo App
-  hosts: todo_servers
-  become: yes
-  vars:
-    app_dir: "/opt/todo-app"
-    docker_image: "{{ lookup('env', 'DOCKER_IMAGE') }}"
-    
-  tasks:
-    - name: Pull latest Docker image
-      docker_image:
-        name: "{{ docker_image }}"
-        source: pull
-        force_source: yes
-      when: docker_image != ""
+name: CI/CD Pipeline
 
-    - name: Stop and remove old containers
-      community.docker.docker_compose:
-        project_src: "{{ app_dir }}"
-        state: absent
-        remove_orphans: yes
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
 
-    - name: Start new containers
-      community.docker.docker_compose:
-        project_src: "{{ app_dir }}"
-        state: present
-        pull: yes
+permissions:
+  contents: read
 
-    - name: Wait for services to be healthy
-      wait_for:
-        host: localhost
-        port: "{{ item }}"
-        delay: 5
-        timeout: 60
-      loop:
-        - 80
-        - 3001
-        - 3002
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKER_HUB_USERNAME && format('{0}/todo-api', secrets.DOCKER_HUB_USERNAME) || 'todo-api' }}
 
-    - name: Check service health
-      uri:
-        url: "http://localhost/blue/health"
-        return_content: yes
-      register: health_check
-      retries: 3
-      delay: 10
+jobs:
+  test:
+    name: Lint & Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [ '18', '20' ]
 
-    - name: Display health status
-      debug:
-        msg: "Health check result: {{ health_check.json }}"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter & syntax checks
+        run: npm run lint
+
+      - name: Run unit & functional tests
+        run: npm test
+
+  build:
+    name: Build & Verify Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check Docker Hub credentials
+        id: creds
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKER_USER" ] && [ -n "$DOCKER_TOKEN" ] && [ "${{ github.event_name }}" = "push" ]; then
+            echo "can_push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.creds.outputs.can_push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ steps.creds.outputs.can_push == 'true' }}
+          load: ${{ steps.creds.outputs.can_push != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging (Green)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deployment secrets
+        id: secrets-check
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "$SERVER_IP" ] && [ -n "$SSH_USER" ] && [ -n "$SSH_PRIVATE_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Staging deployment skipped: SERVER_IP, SSH_USER, or SSH_PRIVATE_KEY secret not configured." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Setup SSH
+        if: steps.secrets-check.outputs.ready == 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.SERVER_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to Green environment
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          ssh "${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}" << 'EOF'
+            cd /opt/todo-app
+            docker-compose pull todo-api-green
+            docker-compose up -d todo-api-green
+            echo "Green environment deployed successfully"
+          EOF
+
+      - name: Health check Green environment
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          sleep 10
+          curl -f "http://${{ secrets.SERVER_IP }}/green/health" || exit 1
+
+  deploy-production:
+    name: Deploy to Production (Blue-Green Switch)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deployment secrets
+        id: secrets-check
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "$SERVER_IP" ] && [ -n "$SSH_USER" ] && [ -n "$SSH_PRIVATE_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Production deployment skipped: SERVER_IP, SSH_USER, or SSH_PRIVATE_KEY secret not configured." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Setup SSH
+        if: steps.secrets-check.outputs.ready == 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.SERVER_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Setup Ansible
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: pip install ansible docker
+
+      - name: Create Ansible inventory
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          echo "[todo_servers]" > inventory.ini
+          echo "${{ secrets.SERVER_IP }} ansible_user=${{ secrets.SSH_USER }} ansible_ssh_private_key_file=~/.ssh/id_rsa" >> inventory.ini
+
+      - name: Deploy with Ansible
+        if: steps.secrets-check.outputs.ready == 'true'
+        env:
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: ansible-playbook -i inventory.ini ansible/deploy.yml
+
+      - name: Run Blue-Green deployment script
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          ssh "${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}" << 'EOF'
+            cd /opt/todo-app
+            bash scripts/blue-green-deploy.sh
+          EOF
+
+      - name: Verify deployment
+        if: steps.secrets-check.outputs.ready == 'true'
+        run: |
+          sleep 15
+          curl -f "http://${{ secrets.SERVER_IP }}/health" || exit 1
+          echo "Production deployment verified successfully"
