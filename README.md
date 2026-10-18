@@ -1,8 +1,5 @@
 # Blue-Green Deployment Todo API
 
-[![CI/CD Pipeline](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/deploy.yml/badge.svg)](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/deploy.yml)
-[![CodeQL Security](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/codeql.yml/badge.svg)](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/codeql.yml)
-[![Terraform Infrastructure](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/terraform.yml/badge.svg)](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/terraform.yml)
 [![Docker Publish](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/shashidhar-02/bluegreendeployment/actions/workflows/docker-publish.yml)
 ![Node.js >= 18](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
